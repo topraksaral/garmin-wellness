@@ -11,8 +11,8 @@ use League\OAuth1\Client\Credentials\CredentialsInterface;
 class Garmin extends Server
 {
 
-    const API_URL = "https://connectapitest.garmin.com/";
-    const USER_API_URL = "http://gcsapitest.garmin.com/wellness-api/rest/";
+    const API_URL = "https://connectapi.garmin.com/";
+    const USER_API_URL = "https://apis.garmin.com/wellness-api/rest/";
 
     /**
      * Get the URL for retrieving temporary credentials.
@@ -31,7 +31,7 @@ class Garmin extends Server
      */
     public function urlAuthorization()
     {
-        return 'http://connecttest.garmin.com/oauthConfirm';
+        return 'http://connect.garmin.com/oauthConfirm';
     }
 
     /**
@@ -41,7 +41,7 @@ class Garmin extends Server
      */
     public function urlTokenCredentials()
     {
-        return self::API_URL . 'oauth-service-1.0/oauth/access_token';
+        return 'https://connectapi.garmin.com/oauth-service/oauth/access_token';
     }
 
     /**
@@ -52,7 +52,7 @@ class Garmin extends Server
      *
      * @return string
      */
-    public function getAuthorizationUrl($temporaryIdentifier)
+    public function getAuthorizationUrl($temporaryIdentifier, $arr = [])
     {
         // Somebody can pass through an instance of temporary
         // credentials and we'll extract the identifier from there.
@@ -62,48 +62,13 @@ class Garmin extends Server
         //$parameters = array('oauth_token' => $temporaryIdentifier, 'oauth_callback' => 'http://70.38.37.105:1225');
 
         $url = $this->urlAuthorization();
+
         //$queryString = http_build_query($parameters);
         $queryString = "oauth_token=" . $temporaryIdentifier . "&oauth_callback=" . $this->clientCredentials->getCallbackUri();
 
         return $this->buildUrl($url, $queryString);
     }
 
-    /**
-     * Retrieves token credentials by passing in the temporary credentials,
-     * the temporary credentials identifier as passed back by the server
-     * and finally the verifier code.
-     *
-     * @param TemporaryCredentials $temporaryCredentials
-     * @param string $temporaryIdentifier
-     * @param string $verifier
-     *
-     * @return TokenCredentials
-     */
-    public function getTokenCredentials(TemporaryCredentials $temporaryCredentials, $temporaryIdentifier, $verifier)
-    {
-        if ($temporaryIdentifier !== $temporaryCredentials->getIdentifier()) {
-            throw new \InvalidArgumentException(
-                'Temporary identifier passed back by server does not match that of stored temporary credentials.
-                Potential man-in-the-middle.'
-            );
-        }
-
-        $uri = $this->urlTokenCredentials();
-        $bodyParameters = array('oauth_verifier' => $verifier);
-
-        $client = $this->createHttpClient();
-
-        $headers = $this->getHeaders($temporaryCredentials, 'POST', $uri, $bodyParameters);
-        try {
-            $response = $client->post($uri, [
-                'headers' => $headers,
-                'form_params' => $bodyParameters
-            ]);
-        } catch (BadResponseException $e) {
-            return $this->handleTokenCredentialsBadResponse($e);
-        }
-        return $this->createTokenCredentials((string)$response->getBody());
-    }
 
     protected function protocolHeader($method, $uri, CredentialsInterface $credentials, array $bodyParameters = array())
     {
@@ -132,6 +97,7 @@ class Garmin extends Server
         $client = $this->createHttpClient();
         $query = http_build_query($params);
         $query = '/activities?' . $query;
+
         $headers = $this->getHeaders($tokenCredentials, 'GET', self::USER_API_URL . $query);
         try {
             $response = $client->get(self::USER_API_URL . $query, [
@@ -147,6 +113,52 @@ class Garmin extends Server
             );
         }
         return $response->getBody()->getContents();
+    }
+
+    public function getActivityDetailSummary(TokenCredentials $tokenCredentials, $params)
+    {
+        $client = $this->createHttpClient();
+        $query = http_build_query($params);
+        $query = 'activityDetails?' . $query;
+
+        $headers = $this->getHeaders($tokenCredentials, 'GET', self::USER_API_URL . $query);
+
+        try {
+            $response = $client->get(self::USER_API_URL . $query, $headers)->send();
+        } catch (BadResponseException $e) {
+            $response = $e->getResponse();
+            $body = $response->getBody();
+            $statusCode = $response->getStatusCode();
+
+            throw new \Exception(
+                "Received error [$body] with status code [$statusCode] when retrieving activity summary."
+            );
+        }
+
+        return $response->json();
+    }
+
+    public function getUserId(TokenCredentials $tokenCredentials, $params)
+    {
+        $client = $this->createHttpClient();
+        $query = http_build_query($params);
+        $query = 'user/id?' . $query;
+
+        $headers = $this->getHeaders($tokenCredentials, 'GET', self::USER_API_URL . $query);
+
+        try {
+            $response = $client->get(self::USER_API_URL . $query, $headers)->send();
+        } catch (BadResponseException $e) {
+            $response = $e->getResponse();
+            $body = $response->getBody();
+            $statusCode = $response->getStatusCode();
+
+            throw new \Exception(
+                "Received error [$body] with status code [$statusCode] when retrieving activity summary."
+            );
+        }
+
+        return $response->json()['userId'];
     }
 
     public function urlUserDetails()
